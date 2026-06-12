@@ -137,7 +137,7 @@ Options:
 ### Install from source
 
 ```bash
-git clone <REPOSITORY_URL>
+git clone https://github.com/Akkitto/markdown-rs-cli.git
 cd markdown-rs-cli
 
 cargo install --path .
@@ -170,7 +170,7 @@ cargo install markdown-rs-cli
 ### Install from Git
 
 ```bash
-cargo install --git <REPOSITORY_URL>
+cargo install --git https://github.com/Akkitto/markdown-rs-cli.git
 ```
 
 ## Contribute
@@ -229,7 +229,7 @@ Git hooks are local to each clone. CI should still run the same checks for enfor
 
 ## Licence
 
-Copyright © 2025-2026  [Daniel Braniewski](https://brani.dev/)
+Copyright © 2026  [Daniel Braniewski](https://brani.dev/)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
