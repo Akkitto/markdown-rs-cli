@@ -1,0 +1,23 @@
+minimum_pre_commit_version: "4.0.0"
+
+repos:
+  - repo: https://github.com/AndrejOrsula/pre-commit-cargo
+    rev: 0.5.0
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+
+      - id: cargo-clippy
+        name: cargo clippy
+        args:
+          - --all-targets
+          - --all-features
+          - --
+          - -D
+          - warnings
+
+      - id: cargo-test
+        name: cargo test
+        args:
+          - --all-targets
+          - --all-features

@@ -1,0 +1,21 @@
+[package]
+name = "markdown-rs-cli"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Convert Markdown to markdown-rs mdast JSON."
+repository = "https://example.invalid/replace-me"
+readme = "README.md"
+keywords = ["markdown", "mdast", "cli", "json"]
+categories = ["command-line-utilities", "text-processing"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+markdown = { version = "1", features = ["serde"] }
+serde_json = "1"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
