@@ -1,6 +1,6 @@
 [package]
 name = "markdown-rs-cli"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 description = "Convert Markdown to markdown-rs mdast JSON."
@@ -13,6 +13,7 @@ categories = ["command-line-utilities", "text-processing"]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 markdown = { version = "1", features = ["serde"] }
+mdast_util_to_markdown = "0.0.2"
 serde_json = "1"
 
 [dev-dependencies]

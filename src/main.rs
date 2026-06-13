@@ -1,155 +1,164 @@
-use std::{
-    fs,
-    io::{self, Read, Write},
-    path::{Path, PathBuf},
-};
+use std::ffi::OsStr;
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, ValueEnum};
-use markdown_rs_cli::{MarkdownDialect, MdastOptions, markdown_to_mdast_json};
+use markdown::mdast::Node;
+use markdown_rs_cli::{
+    DEFAULT_MAX_BYTES, MarkdownDialect, MarkdownSerializeOptions, MdastOptions,
+    markdown_to_mdast_json, mdast_json_to_markdown,
+};
 
-/// Convert Markdown to markdown-rs mdast JSON.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, ValueEnum)]
+enum InputFormat {
+    Auto,
+    Markdown,
+    Mdast,
+}
+
 #[derive(Debug, Parser)]
-#[command(version, about)]
-struct Args {
-    /// Input Markdown file. Reads stdin when omitted or when set to "-".
+#[command(
+    name = "markdown-rs-cli",
+    version,
+    about = "Convert Markdown to markdown-rs mdast JSON, or mdast JSON to canonical Markdown."
+)]
+struct Cli {
+    /// Input file. Reads stdin when omitted or set to "-".
+    #[arg(value_name = "INPUT")]
     input: Option<PathBuf>,
 
-    /// Output JSON file. Writes stdout when omitted or when set to "-".
-    #[arg(short, long)]
+    /// Output file. Writes stdout when omitted or set to "-".
+    #[arg(short, long, value_name = "OUTPUT")]
     output: Option<PathBuf>,
 
-    /// Markdown dialect to parse.
-    #[arg(long, value_enum, default_value_t = DialectArg::Commonmark)]
-    dialect: DialectArg,
+    /// Input format. Auto-detects valid markdown-rs mdast JSON by default.
+    #[arg(long = "from", value_enum, default_value = "auto")]
+    from: InputFormat,
 
-    /// Enable frontmatter parsing.
+    /// Markdown dialect preset for Markdown -> mdast.
+    #[arg(long, value_enum, default_value = "commonmark")]
+    dialect: MarkdownDialect,
+
+    /// Enable frontmatter parsing for Markdown -> mdast.
     #[arg(long)]
     frontmatter: bool,
 
-    /// Enable math parsing.
+    /// Enable flow and inline math parsing for Markdown -> mdast.
     #[arg(long)]
     math: bool,
 
-    /// Disable GitHub-style single-tilde strikethrough.
-    ///
-    /// Useful when you want stricter GFM behavior.
+    /// Disable GitHub-style single-tilde strikethrough for Markdown -> mdast.
     #[arg(long)]
     strict_gfm: bool,
 
-    /// Disable single-dollar inline math.
-    ///
-    /// Useful for documents containing normal currency text like "$10".
+    /// Disable single-dollar inline math parsing/serialization.
     #[arg(long)]
     no_single_dollar_math: bool,
 
-    /// Emit compact JSON instead of pretty JSON.
+    /// Emit compact JSON instead of pretty JSON for Markdown -> mdast.
     #[arg(long)]
     compact: bool,
 
-    /// Maximum accepted input size in bytes.
-    ///
-    /// markdown-rs itself recommends capping untrusted input size.
-    /// Security notes:
-    /// https://github.com/wooorm/markdown-rs#security
-    #[arg(long, default_value_t = 10_000_000)]
-    max_bytes: u64,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum DialectArg {
-    Commonmark,
-    Gfm,
-    Mdx,
-}
-
-impl From<DialectArg> for MarkdownDialect {
-    fn from(value: DialectArg) -> Self {
-        match value {
-            DialectArg::Commonmark => Self::CommonMark,
-            DialectArg::Gfm => Self::Gfm,
-            DialectArg::Mdx => Self::Mdx,
-        }
-    }
+    /// Refuse input larger than this many bytes.
+    #[arg(long, default_value_t = DEFAULT_MAX_BYTES, value_name = "BYTES")]
+    max_bytes: usize,
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let cli = Cli::parse();
 
-    let markdown = read_input(args.input.as_deref(), args.max_bytes)?;
-
-    let options = MdastOptions {
-        dialect: args.dialect.into(),
-        frontmatter: args.frontmatter,
-        math: args.math,
-        strict_gfm: args.strict_gfm,
-        single_dollar_math: !args.no_single_dollar_math,
-        pretty: !args.compact,
+    let input = read_input(cli.input.as_deref(), cli.max_bytes)?;
+    let input_format = match cli.from {
+        InputFormat::Auto => detect_input_format(&input),
+        explicit_input_format => explicit_input_format,
     };
 
-    let json = markdown_to_mdast_json(&markdown, &options)?;
+    let mdast_options = MdastOptions {
+        dialect: cli.dialect,
+        frontmatter: cli.frontmatter,
+        math: cli.math,
+        strict_gfm: cli.strict_gfm,
+        single_dollar_math: !cli.no_single_dollar_math,
+        compact: cli.compact,
+    };
 
-    write_output(args.output.as_deref(), &json)?;
+    let markdown_options = MarkdownSerializeOptions {
+        single_dollar_math: !cli.no_single_dollar_math,
+    };
 
-    Ok(())
+    let output = match input_format {
+        InputFormat::Auto => unreachable!("auto input format must be resolved before conversion"),
+        InputFormat::Markdown => markdown_to_mdast_json(&input, &mdast_options)?,
+        InputFormat::Mdast => mdast_json_to_markdown(&input, &markdown_options)?,
+    };
+
+    write_output(cli.output.as_deref(), &output)
 }
 
-fn read_input(input: Option<&Path>, max_bytes: u64) -> Result<String> {
-    match input {
-        Some(path) if path != Path::new("-") => {
-            let file = fs::File::open(path)
-                .with_context(|| format!("failed to open input file: {}", path.display()))?;
+fn detect_input_format(input: &str) -> InputFormat {
+    if serde_json::from_str::<Node>(input).is_ok() {
+        InputFormat::Mdast
+    } else {
+        InputFormat::Markdown
+    }
+}
 
-            read_with_limit(file, max_bytes, &path.display().to_string())
+fn read_input(input: Option<&Path>, max_bytes: usize) -> Result<String> {
+    match input {
+        Some(path) if !is_dash(path) => {
+            let file = File::open(path)
+                .with_context(|| format!("failed to open input file {}", path.display()))?;
+            read_string_limited(file, max_bytes)
         }
         _ => {
             let stdin = io::stdin();
-            read_with_limit(stdin.lock(), max_bytes, "stdin")
+            read_string_limited(stdin.lock(), max_bytes)
         }
     }
 }
 
-fn read_with_limit<R: Read>(reader: R, max_bytes: u64, source: &str) -> Result<String> {
+fn read_string_limited<R>(reader: R, max_bytes: usize) -> Result<String>
+where
+    R: Read,
+{
     let read_limit = max_bytes
         .checked_add(1)
         .context("--max-bytes is too large")?;
+    let read_limit = u64::try_from(read_limit).context("--max-bytes is too large")?;
 
+    let mut bytes = Vec::new();
     let mut limited_reader = reader.take(read_limit);
-    let mut buffer = Vec::new();
-
     limited_reader
-        .read_to_end(&mut buffer)
-        .with_context(|| format!("failed to read Markdown from {source}"))?;
+        .read_to_end(&mut bytes)
+        .context("failed to read input")?;
 
-    let actual_bytes = u64::try_from(buffer.len()).context("input size does not fit into u64")?;
-
-    if actual_bytes > max_bytes {
-        bail!("input from {source} exceeds --max-bytes limit of {max_bytes} bytes");
+    if bytes.len() > max_bytes {
+        bail!("input exceeds --max-bytes limit ({max_bytes} bytes)");
     }
 
-    String::from_utf8(buffer).with_context(|| format!("input from {source} is not valid UTF-8"))
+    String::from_utf8(bytes).context("input is not valid UTF-8")
 }
 
-fn write_output(output: Option<&Path>, json: &str) -> Result<()> {
+fn write_output(output: Option<&Path>, contents: &str) -> Result<()> {
     match output {
-        Some(path) if path != Path::new("-") => {
-            fs::write(path, format!("{json}\n"))
-                .with_context(|| format!("failed to write output file: {}", path.display()))?;
+        Some(path) if !is_dash(path) => {
+            std::fs::write(path, contents)
+                .with_context(|| format!("failed to write output file {}", path.display()))?;
         }
         _ => {
-            let mut stdout = io::stdout().lock();
-
-            stdout
-                .write_all(json.as_bytes())
-                .context("failed to write JSON to stdout")?;
-
-            stdout
-                .write_all(b"\n")
-                .context("failed to write trailing newline to stdout")?;
-
-            stdout.flush().context("failed to flush stdout")?;
+            let stdout = io::stdout();
+            let mut handle = stdout.lock();
+            handle
+                .write_all(contents.as_bytes())
+                .context("failed to write stdout")?;
         }
     }
 
     Ok(())
+}
+
+fn is_dash(path: &Path) -> bool {
+    path.as_os_str() == OsStr::new("-")
 }
