@@ -1,6 +1,6 @@
 # markdown-rs-cli
 
-Convert Markdown to `markdown-rs` [mdast](https://github.com/syntax-tree/mdast) JSON.
+Convert Markdown to `markdown-rs` [mdast](https://github.com/syntax-tree/mdast) JSON, and convert mdast JSON to canonical Markdown.
 
 ## What
 
@@ -8,23 +8,34 @@ Convert Markdown to `markdown-rs` [mdast](https://github.com/syntax-tree/mdast) 
 
 It parses Markdown input and writes the resulting [mdast](https://github.com/syntax-tree/mdast)-compatible abstract syntax tree as JSON.
 
+It can also read exported mdast JSON and serialize it to Markdown.
+
+By default, the CLI auto-detects the input format:
+
+* valid `markdown-rs` mdast JSON is converted to canonical Markdown
+* all other input is parsed as Markdown and emitted as mdast JSON
+
+Use `--from markdown` or `--from mdast` to force one direction explicitly.
+
 Input can come from:
 
-- a Markdown file
-- stdin
+* a Markdown file
+* an mdast JSON file
+* stdin
 
 Output can go to:
 
-- stdout
-- a JSON file
+* stdout
+* a JSON file
+* a Markdown file
 
 Supported parser modes:
 
-- CommonMark
-- GitHub Flavored Markdown
-- MDX
-- optional frontmatter
-- optional math
+* CommonMark
+* GitHub Flavored Markdown
+* MDX
+* optional frontmatter
+* optional math
 
 ## Why
 
@@ -34,13 +45,16 @@ This tool exists to make Markdown documents usable in scripts, CI jobs, static a
 
 It is useful when you want to:
 
-- inspect Markdown structurally
-- extract headings, sections, links, lists, or text nodes
-- convert Markdown into your own JSON/YAML schema
-- build documentation automation without relying on fragile regular expressions
-- keep the raw parser output available before creating opinionated projections
+* inspect Markdown structurally
+* extract headings, sections, links, lists, or text nodes
+* convert Markdown into your own JSON/YAML schema
+* build documentation automation without relying on fragile regular expressions
+* keep the raw parser output available before creating opinionated projections
+* serialize mdast JSON back to canonical Markdown
 
 The tool intentionally emits raw [mdast](https://github.com/syntax-tree/mdast) JSON instead of inventing its own schema.
+
+Reverse conversion produces canonical Markdown from mdast JSON. It is not guaranteed to restore the original Markdown byte-for-byte, because mdast is an abstract syntax tree and does not preserve every concrete formatting detail.
 
 ## How
 
@@ -48,7 +62,7 @@ The tool intentionally emits raw [mdast](https://github.com/syntax-tree/mdast) J
 
 ```bash
 markdown-rs-cli README.md
-````
+```
 
 ### Parse a file to another file
 
@@ -86,6 +100,41 @@ markdown-rs-cli --frontmatter --math README.md
 markdown-rs-cli --compact README.md
 ```
 
+### Convert mdast JSON back to Markdown
+
+```bash
+markdown-rs-cli README.mdast.json --output README.restored.md
+```
+
+### Convert mdast JSON from stdin
+
+```bash
+cat README.mdast.json | markdown-rs-cli > README.restored.md
+```
+
+### Force mdast JSON input
+
+```bash
+markdown-rs-cli --from mdast README.mdast.json --output README.restored.md
+```
+
+### Force Markdown input
+
+```bash
+markdown-rs-cli --from markdown README.md --output README.mdast.json
+```
+
+### Markdown round-trip workflow
+
+```bash
+markdown-rs-cli README.md --output README.mdast.json
+markdown-rs-cli README.mdast.json --output README.restored.md
+```
+
+The restored Markdown is canonical Markdown generated from the mdast tree.
+
+It is not guaranteed to be byte-for-byte identical to the original input, because mdast is an abstract syntax tree and does not preserve every concrete Markdown formatting detail, such as marker choice, wrapping, blank line count, escaping style, or trailing whitespace.
+
 ### Options
 
 ```text
@@ -94,32 +143,42 @@ Usage:
 
 Arguments:
   [INPUT]
-    Input Markdown file.
+    Input file.
     Reads stdin when omitted or when set to "-".
+    By default, input format is auto-detected.
 
 Options:
   -o, --output <OUTPUT>
-    Output JSON file.
+    Output file.
     Writes stdout when omitted or when set to "-".
+    With Markdown input, output is mdast JSON.
+    With mdast JSON input, output is Markdown.
+
+  --from <auto|markdown|mdast>
+    Input format.
+    "auto" treats valid markdown-rs mdast JSON as mdast input.
+    Otherwise input is treated as Markdown.
+    Default: auto
 
   --dialect <commonmark|gfm|mdx>
-    Markdown dialect preset.
+    Markdown dialect preset for Markdown input.
     Default: commonmark
 
   --frontmatter
-    Enable frontmatter parsing.
+    Enable frontmatter parsing for Markdown input.
 
   --math
-    Enable flow and inline math parsing.
+    Enable flow and inline math parsing for Markdown input.
 
   --strict-gfm
-    Disable GitHub-style single-tilde strikethrough.
+    Disable GitHub-style single-tilde strikethrough for Markdown input.
 
   --no-single-dollar-math
-    Disable single-dollar inline math parsing.
+    Disable single-dollar inline math parsing and serialization.
 
   --compact
     Emit compact JSON instead of pretty JSON.
+    Only applies when outputting mdast JSON.
 
   --max-bytes <BYTES>
     Refuse input larger than this size.
