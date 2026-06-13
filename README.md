@@ -264,6 +264,32 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets --all-features
 ```
 
+### Just Task Runner
+
+The repository also includes a `justfile` for local quality and release checks.
+
+Install `just`:
+
+```bash
+cargo install just
+```
+
+Run the default local sanity gate:
+
+```bash
+just
+```
+
+Most useful recipes:
+
+```bash
+just fmt
+just check
+just release-sanity
+```
+
+`just release-sanity` should be used before tagging or publishing.
+
 Recommended contribution rules:
 
 * install and use the committed `pre-commit` hooks
